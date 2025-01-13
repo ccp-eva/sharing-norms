@@ -15,9 +15,19 @@ make_explanatory_plot <- function(filename) {
 	d$completion_diff <- d$inter_completion - d$intra_completion
 
 	null_theme <- theme(legend.position = "none",
-        		axis.title.y = element_blank(),
-        		axis.text.y = element_blank(),
-        		axis.ticks.y = element_blank())
+			    axis.title.y = element_blank(),
+			    axis.text.y = element_blank(),
+			    axis.ticks.y = element_blank(),
+			    axis.line = element_line(size=0.25, color="black"),
+			    plot.title = element_text(size = 20),
+			    legend.title = element_text(size = 20),
+			    legend.text = element_text(size = 18),
+			    axis.title = element_text(size = 20),
+			    axis.text = element_text(size = 18),
+			    strip.text = element_text(size=18),
+			    panel.background = element_rect(fill = "white", colour = "white"),
+			    panel.grid   = element_blank()
+	)
 
 	# Leftmost part of plot
 	# Individual a and b parameters for inter and intra
@@ -37,6 +47,8 @@ make_explanatory_plot <- function(filename) {
 				              "Inter-ethnic norm learning parameter b"))) %>%
 		ggplot() +
 		geom_density(aes(x=value, fill=name), alpha=0.1) +
+		scale_x_continuous(expand = c(0, 0)) +
+		scale_y_continuous(expand = c(0, 0)) +
 		facet_wrap(~name, dir="v", ncol=1, scales="free") +
 		null_theme +
 		ggtitle("(a) Raw model parameters") +
@@ -55,8 +67,10 @@ make_explanatory_plot <- function(filename) {
 						    "Inter-ethnic norm learning completion age"))) %>%
 		ggplot() +
 		geom_density(aes(x=value, fill=name), alpha=0.1, show.legend = FALSE) +
+		scale_x_continuous(expand = c(0, 0)) +
+		scale_y_continuous(expand = c(0, 0)) +
 		xlim(c(5,30)) +
-		facet_wrap(~name, dir="v", ncol=1) +
+		facet_wrap(~name, dir="v", ncol=1, scales="free") +
 		null_theme +
 		ggtitle("(b) Corresponding completion ages") +
 		labs(x="Completion ages (years)")
@@ -67,9 +81,11 @@ make_explanatory_plot <- function(filename) {
 		dplyr::select(completion_diff) %>%
 		ggplot() +
 		geom_density(aes(x=completion_diff), alpha=0.1, show.legend = FALSE) +
+		scale_x_continuous(expand = c(0, 0)) +
+		scale_y_continuous(expand = c(0, 0)) +
 		xlim(c(-10,10)) +
-		geom_vline(xintercept=0, linetype="dotted") +
 		null_theme +
+		geom_vline(xintercept=0, linetype="dotted") +
 		ggtitle("(c) Difference between completion ages") +
 		labs(x="Age difference (years)")
 	right_col_data <- ggplot_build(right_col)$data[[1]]
