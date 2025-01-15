@@ -6,9 +6,9 @@ data{
 
     // Task data
     int N_data;
-    int part_id[N_data];
-    int condition[N_data];
-    int shared[N_data];
+    int<lower=1, upper=N_part> part_id[N_data];
+    int<lower=1, upper=2> condition[N_data];
+    int<lower=0, upper=1> shared[N_data];
 }
 
 parameters{
