@@ -1,0 +1,134 @@
+---
+title: "XShare"
+author: "Luke Maurits"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r import data, include=FALSE}
+### Import data
+#### Load packages and clear environment.
+library(tidyverse)
+library(rstan)
+library(matrixStats)
+library(knitr)
+
+d <- read_csv("../data/raw_data_anonymized.csv")
+model <- readRDS("model.rds")
+
+#Make color pallette
+pal80s<-rep(c("#eab60b","#4d8d72","#ea84b2","#e67309","#516bb4","#e45d5c","#9c84e8","#7ed2e8","#e9b50d"),20)
+```
+
+## Pre-registered model (no sex effects)
+
+### Estimated sharing rates
+
+```{r}
+x <- extract(model)
+```
+
+We estimate the ``infant'' sharing rate, which is not specific to either culture or either condition to be `r round(mean(x$start_prob), 2)`, with 95% HPD interval [`r round(quantile(x$start_prob, p=0.025), 2)` - `r round(quantile(x$start_prob, p=0.975), 2)`].
+
+We estimate four distinct adult sharing rates, one per combination of culture and condition:
+
+```{r}
+nd <- expand_grid(culture=c(1,2), condition=c(1,2))
+nd$index <- 2*(nd$culture - 1) + nd$condition
+nd$culture <- c("Bandongo", "Bayaka")[nd$culture]
+nd$condition <- c("Inter-group", "Intra-group")[nd$condition]
+for(i in 1:nrow(nd)) {
+	end_probs <- x$end_prob[,nd$index[i]]
+	nd$`Sharing rate posterior mean`[i] <- mean(end_probs)
+	nd$`Sharing rate hpd lower`[i] <- quantile(end_probs, p=0.025)
+	nd$`Sharing rate hpd upper`[i] <- quantile(end_probs, p=0.975)
+	if(mean(end_probs) > mean(x$start_prob)) {
+		nd$`Change from infancy`[i] <- mean(end_probs > x$start_prob)
+	} else {
+		nd$`Change from infancy`[i] <- mean(end_probs < x$start_prob)
+	}
+}
+nd %>%
+	select(-index) %>%
+	kable(digits=2)
+```
+
+We also estimate 4 "completion ages", i.e. ages at which participants are expected to have changed their sharing rate by 95% of the total shift from infant to adult.
+
+```{r}
+for(i in 1:nrow(nd)) {
+	completion_ages <- x$age_params[,nd$index[i],1] - log(0.05)*x$age_params[,nd$index[i],2]
+	nd$`Completion age posterior mean`[i] <- mean(completion_ages)
+	nd$`Completion age hpd lower`[i] <- quantile(completion_ages, p=0.025)
+	nd$`Completion age hpd upper`[i] <- quantile(completion_ages, p=0.975)
+}
+nd %>%
+	select(-index, -starts_with("Sharing rate")) %>%
+	kable(digits=2)
+```
+
+Computing contrasts:
+
+```{r}
+completion_1 <- x$age_params[,1,1] - log(0.05)*x$age_params[,1,2]
+completion_2 <- x$age_params[,2,1] - log(0.05)*x$age_params[,2,2]
+completion_3 <- x$age_params[,3,1] - log(0.05)*x$age_params[,3,2]
+completion_4 <- x$age_params[,4,1] - log(0.05)*x$age_params[,4,2]
+bandongo_contrast <- completion_2 - completion_1
+bayaka_contrast <- completion_4 - completion_3
+nd <- tibble(culture=character(),
+	     `Completion age diff posterior mean` = numeric(),
+	     `Completion age diff HPD lower` = numeric(),
+	     `Completion age diff HPD upper` = numeric(),
+	     `Directionality` = numeric())
+nd <- add_row(nd, culture="Bandongo", 
+	     `Completion age diff posterior mean` = mean(bandongo_contrast),
+	     `Completion age diff HPD lower` = quantile(bandongo_contrast, p=0.025),
+	     `Completion age diff HPD upper` = quantile(bandongo_contrast, p=0.975),
+	     `Directionality` = mean(bandongo_contrast > 0))
+nd <- add_row(nd, culture="Bayaka", 
+	     `Completion age diff posterior mean` = mean(bayaka_contrast),
+	     `Completion age diff HPD lower` = quantile(bayaka_contrast, p=0.025),
+	     `Completion age diff HPD upper` = quantile(bayaka_contrast, p=0.975),
+	     `Directionality` = mean(bayaka_contrast > 0))
+kable(nd, digits=2)
+```
+
+### Posterior predictive plots
+
+```{r}
+nd <- expand_grid(age=seq(5, 75, 0.25), culture=c(1, 2), condition=c(1, 2))
+nd$index <- 2*(nd$culture - 1) + nd$condition
+# First add posterior mean
+nd$p <-
+	mean(x$start_prob) +
+	(colMeans(x$end_prob)[nd$index] - mean(x$start_prob)) *
+	plogis(colMeans(x$age_params)[nd$index, 2]*(nd$age - colMeans(x$age_params)[nd$index, 1] ))
+nd$type <- "posterior mean"
+nd$alpha <- 1
+nd$sample <- 0
+plot_t <- nd
+# Now plot 50 random samples
+nd$type <- "posterior samples"
+nd$alpha <- 0.5
+indices <- sample(1:length(x$start_prob), size=50, replace=FALSE)
+for(i in indices) {
+	nd$p <- x$start_prob[i] +
+		(x$end_prob[i,nd$index] - x$start_prob[i]) *
+		plogis(x$age_params[i, nd$index, 2]*(nd$age - x$age_params[i, nd$index, 1] ))
+	nd$sample <- i
+	plot_t <- add_row(plot_t, nd)
+}
+
+plot_t$culture <- c("Bandongo", "Bayaka")[plot_t$culture]
+plot_t$condition <- c("Inter-group", "Intra-group")[plot_t$condition]
+ggplot(plot_t) +
+	geom_line(aes(x=age, y=p, group=sample, colour=condition, linewidth=type, alpha=alpha)) +
+	scale_discrete_manual("linewidth", values=c(1, 1/3)) +
+	facet_grid(condition~culture)
+```
