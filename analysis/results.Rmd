@@ -19,7 +19,6 @@ library(matrixStats)
 library(knitr)
 
 d <- read_csv("../data/raw_data_anonymized.csv")
-model <- readRDS("model.rds")
 
 #Make color pallette
 pal80s<-rep(c("#eab60b","#4d8d72","#ea84b2","#e67309","#516bb4","#e45d5c","#9c84e8","#7ed2e8","#e9b50d"),20)
@@ -30,6 +29,7 @@ pal80s<-rep(c("#eab60b","#4d8d72","#ea84b2","#e67309","#516bb4","#e45d5c","#9c84
 ### Estimated sharing rates
 
 ```{r}
+model <- readRDS("model_no_sex.rds")
 x <- extract(model)
 ```
 
@@ -43,7 +43,7 @@ nd$index <- 2*(nd$culture - 1) + nd$condition
 nd$culture <- c("Bandongo", "Bayaka")[nd$culture]
 nd$condition <- c("Inter-group", "Intra-group")[nd$condition]
 for(i in 1:nrow(nd)) {
-	end_probs <- x$end_prob[,nd$index[i]]
+	end_probs <- x$end_probs[,nd$index[i]]
 	nd$`Sharing rate posterior mean`[i] <- mean(end_probs)
 	nd$`Sharing rate hpd lower`[i] <- quantile(end_probs, p=0.025)
 	nd$`Sharing rate hpd upper`[i] <- quantile(end_probs, p=0.975)
@@ -107,7 +107,7 @@ nd$index <- 2*(nd$culture - 1) + nd$condition
 # First add posterior mean
 nd$p <-
 	mean(x$start_prob) +
-	(colMeans(x$end_prob)[nd$index] - mean(x$start_prob)) *
+	(colMeans(x$end_probs)[nd$index] - mean(x$start_prob)) *
 	plogis(colMeans(x$age_params)[nd$index, 2]*(nd$age - colMeans(x$age_params)[nd$index, 1] ))
 nd$type <- "posterior mean"
 nd$alpha <- 1
@@ -119,8 +119,138 @@ nd$alpha <- 0.5
 indices <- sample(1:length(x$start_prob), size=50, replace=FALSE)
 for(i in indices) {
 	nd$p <- x$start_prob[i] +
-		(x$end_prob[i,nd$index] - x$start_prob[i]) *
+		(x$end_probs[i,nd$index] - x$start_prob[i]) *
 		plogis(x$age_params[i, nd$index, 2]*(nd$age - x$age_params[i, nd$index, 1] ))
+	nd$sample <- i
+	plot_t <- add_row(plot_t, nd)
+}
+
+plot_t$culture <- c("Bandongo", "Bayaka")[plot_t$culture]
+plot_t$condition <- c("Inter-group", "Intra-group")[plot_t$condition]
+ggplot(plot_t) +
+	geom_line(aes(x=age, y=p, group=sample, colour=condition, linewidth=type, alpha=alpha)) +
+	scale_discrete_manual("linewidth", values=c(1, 1/3)) +
+	facet_grid(condition~culture)
+```
+
+## Extended model (with sex effects)
+
+When splitting the participants by sex, it looks like there might be stuff going on which is invisible to the pre-registered model, e.g. female Bayaka participants appear to engage in more intra-group sharing as they age while male Bayaka appear to engage in less:
+
+```{r}
+d %>%
+	mutate(over_18 = d$age > 18) %>%
+	group_by(culture, sex, intra, over_18) %>%
+	summarise(empirical_sharing_proportion = mean(share)) %>%
+	kable(digits=2)
+model <- readRDS("model_sex.rds")
+x <- extract(model)
+```
+
+Of course, we are looking here at proportions calculated from fewer observations so the results are noisier and this could be nothing, so hey, let's model it.
+
+Basically no change in the estimated ``infant'' sharing rate, with posterioe mean `r round(mean(x$start_prob), 2)`, with 95% HPD interval [`r round(quantile(x$start_prob, p=0.025), 2)` - `r round(quantile(x$start_prob, p=0.975), 2)`].  This time we end up with eight different adult probabilities, though:
+
+
+```{r}
+nd <- expand_grid(culture=c(1,2), condition=c(1,2), sex=c(-0.5, 0.5))
+nd$index <- 2*(nd$culture - 1) + nd$condition
+nd$culture <- c("Bandongo", "Bayaka")[nd$culture]
+nd$condition <- c("Inter-group", "Intra-group")[nd$condition]
+for(i in 1:nrow(nd)) {
+	end_probs <- plogis(qlogis(x$end_probs[,nd$index[i]]) + x$end_prob_sex_effects[,nd$index[i]]*nd$sex[i])
+	nd$end_probs_posterior_mean[i] <- mean(end_probs)
+	nd$end_probs_hpd_lower[i] <- quantile(end_probs, p=0.025)
+	nd$end_probs_hpd_upper[i] <- quantile(end_probs, p=0.975)
+}
+nd$sex <- if_else(nd$sex <0, "Male", "Female")
+nd %>%
+	select(-index) %>%
+	kable(digits=2)
+```
+
+The biggest difference is for the Bayaka Intra-group sharing rate, which is estimated at 0.45 for males and 0.30 for females.  And in fact the model is pretty confident about this, the posterior probability that males share at a higher rate than females is 0.90.  The posterior probability that the adult male sharing rate is higher than the infant rate is 0.69 while the posterior probability that the adult female sharing rate is lower than the infant rate is 0.80.  So the developmental trajectories seem to point in opposite directions for the two sexes!
+
+We also get eight separate completion ages...
+```{r}
+nd$sex <- if_else(nd$sex == "Male", -0.5, 0.5)
+for(i in 1:nrow(nd)) {
+	completion_ages <- x$age_params[,nd$index[i],1] + x$age_param_1_sex_effects[,nd$index[i]]*nd$sex[i] -
+	log(0.05)*(x$age_params[,nd$index[i],2] + x$age_param_2_sex_effects[,nd$index[i]]*nd$sex[i])
+	nd$completion_age_posterior_mean[i] <- mean(completion_ages)
+	nd$completion_age_hpd_lower[i] <- quantile(completion_ages, p=0.025)
+	nd$completion_age_hpd_upper[i] <- quantile(completion_ages, p=0.975)
+}
+nd$sex <- if_else(nd$sex <0, "Male", "Female")
+nd %>%
+	select(-index, -starts_with("end_probs")) %>%
+	kable(digits=2)
+```
+
+### Posterior predictive plots, showing sex effects
+
+```{r}
+nd <- expand_grid(age=seq(5, 75, 0.25), sex=c(-0.5, 0.5), culture=c(1, 2), condition=c(1, 2))
+nd$index <- 2*(nd$culture - 1) + nd$condition
+# First add posterior mean
+nd$p <-
+	mean(x$start_prob) +
+	(plogis(qlogis(colMeans(x$end_probs)[nd$index]) + colMeans(x$end_prob_sex_effects)[nd$index]*nd$sex) - mean(x$start_prob)) * plogis((colMeans(x$age_params)[nd$index, 2] + colMeans(x$age_param_2_sex_effects)[nd$index]*nd$sex)*(nd$age - (colMeans(x$age_params)[nd$index, 1] + colMeans(x$age_param_1_sex_effects)[nd$index]*nd$sex)))
+nd$type <- "posterior mean"
+nd$alpha <- 1
+nd$sample <- nd$sex
+plot_t <- nd
+
+# Now plot 50 random samples
+nd$type <- "posterior samples"
+nd$alpha <- 0.5
+indices <- sample(1:length(x$start_prob), size=50, replace=FALSE)
+for(i in indices) {
+	nd$p <- x$start_prob[i] +
+	(plogis(qlogis(x$end_probs[i, nd$index]) + x$end_prob_sex_effects[i, nd$index]*nd$sex) - x$start_prob[i]) * plogis((x$age_params[i, nd$index, 2] + x$age_param_2_sex_effects[i,nd$index]*nd$sex)*(nd$age - (x$age_params[i, nd$index, 1] + x$age_param_1_sex_effects[i, nd$index]*nd$sex)))
+	nd$sample <- i + nd$sex*10*length(x$start_prob)
+	plot_t <- add_row(plot_t, nd)
+}
+
+plot_t$sex <- if_else(plot_t$sex < 0, "Male", "Female")
+plot_t$culture <- c("Bandongo", "Bayaka")[plot_t$culture]
+plot_t$condition <- c("Inter-group", "Intra-group")[plot_t$condition]
+ggplot(plot_t) +
+	geom_line(aes(x=age, y=p, group=sample, colour=sex, linewidth=type, alpha=alpha)) +
+	scale_discrete_manual("linewidth", values=c(1, 1/3)) +
+	facet_grid(condition~culture)
+```
+
+### Posterior predictive plots, marginalising out sex effects
+
+```{r}
+nd <- expand_grid(age=seq(5, 75, 0.25), culture=c(1, 2), condition=c(1, 2))
+nd$index <- 2*(nd$culture - 1) + nd$condition
+# First add posterior mean
+sex <- -0.5
+m_p <-   mean(x$start_prob) +
+	(plogis(qlogis(colMeans(x$end_probs)[nd$index]) + colMeans(x$end_prob_sex_effects)[nd$index]*sex) - mean(x$start_prob)) * plogis((colMeans(x$age_params)[nd$index, 2] + colMeans(x$age_param_2_sex_effects)[nd$index]*sex)*(nd$age - (colMeans(x$age_params)[nd$index, 1] + colMeans(x$age_param_1_sex_effects)[nd$index]*sex)))
+sex <- 0.5
+f_p <-   mean(x$start_prob) +
+	(plogis(qlogis(colMeans(x$end_probs)[nd$index]) + colMeans(x$end_prob_sex_effects)[nd$index]*sex) - mean(x$start_prob)) * plogis((colMeans(x$age_params)[nd$index, 2] + colMeans(x$age_param_2_sex_effects)[nd$index]*sex)*(nd$age - (colMeans(x$age_params)[nd$index, 1] + colMeans(x$age_param_1_sex_effects)[nd$index]*sex)))
+nd$p <- 0.5*(m_p + f_p)
+nd$type <- "posterior mean"
+nd$alpha <- 1
+nd$sample <- 0
+plot_t <- nd
+
+# Now plot 50 random samples
+nd$type <- "posterior samples"
+nd$alpha <- 0.5
+indices <- sample(1:length(x$start_prob), size=50, replace=FALSE)
+for(i in indices) {
+	sex < -0.5
+	m_p <- x$start_prob[i] +
+	       (plogis(qlogis(x$end_probs[i, nd$index]) + x$end_prob_sex_effects[i, nd$index]*sex) - x$start_prob[i]) * plogis((x$age_params[i, nd$index, 2] + x$age_param_2_sex_effects[i,nd$index]*sex)*(nd$age - (x$age_params[i, nd$index, 1] + x$age_param_1_sex_effects[i, nd$index]*sex)))
+	sex < 0.5
+	f_p <- x$start_prob[i] +
+	       (plogis(qlogis(x$end_probs[i, nd$index]) + x$end_prob_sex_effects[i, nd$index]*sex) - x$start_prob[i]) * plogis((x$age_params[i, nd$index, 2] + x$age_param_2_sex_effects[i,nd$index]*sex)*(nd$age - (x$age_params[i, nd$index, 1] + x$age_param_1_sex_effects[i, nd$index]*sex)))
+        nd$p <- 0.5*(m_p + f_p)
 	nd$sample <- i
 	plot_t <- add_row(plot_t, nd)
 }
