@@ -74,13 +74,15 @@ nd %>%
 
 Computing contrasts:
 
+Contrasts based on inter-sharing completion age minus intra-sharing completion age, i.e. positive contrast values means it takes longer to learn inter-sharing norms.
+
 ```{r}
 completion_1 <- x$age_params[,1,1] - log(0.05)*x$age_params[,1,2]
 completion_2 <- x$age_params[,2,1] - log(0.05)*x$age_params[,2,2]
 completion_3 <- x$age_params[,3,1] - log(0.05)*x$age_params[,3,2]
 completion_4 <- x$age_params[,4,1] - log(0.05)*x$age_params[,4,2]
-bandongo_contrast <- completion_2 - completion_1
-bayaka_contrast <- completion_4 - completion_3
+bandongo_contrast <- completion_1 - completion_2
+bayaka_contrast <- completion_3 - completion_4
 nd <- tibble(culture=character(),
 	     `Completion age diff posterior mean` = numeric(),
 	     `Completion age diff HPD lower` = numeric(),
@@ -185,6 +187,39 @@ nd$sex <- if_else(nd$sex <0, "Male", "Female")
 nd %>%
 	select(-index, -starts_with("end_probs")) %>%
 	kable(digits=2)
+```
+
+Computing contrasts once again for inter minus intra...
+
+```{r}
+contrasts <- tibble(culture=integer(), sex=integer(),
+	     `Completion age diff posterior mean` = numeric(),
+	     `Completion age diff HPD lower` = numeric(),
+	     `Completion age diff HPD upper` = numeric(),
+	     `Directionality` = numeric())
+
+nd <- expand_grid(culture=c(1,2), condition=1, sex=c(-0.5, 0.5))
+nd$index <- 2*(nd$culture - 1) + nd$condition
+
+for(i in 1:nrow(nd)) {
+	nd$condition <- 1
+	nd$index <- 2*(nd$culture - 1) + nd$condition
+	inter_completion_ages <- x$age_params[,nd$index[i],1] + x$age_param_1_sex_effects[,nd$index[i]]*nd$sex[i] -
+			log(0.05)*(x$age_params[,nd$index[i],2] + x$age_param_2_sex_effects[,nd$index[i]]*nd$sex[i])
+	nd$condition <- 2
+	nd$index <- 2*(nd$culture - 1) + nd$condition
+	intra_completion_ages <- x$age_params[,nd$index[i],1] + x$age_param_1_sex_effects[,nd$index[i]]*nd$sex[i] -
+			log(0.05)*(x$age_params[,nd$index[i],2] + x$age_param_2_sex_effects[,nd$index[i]]*nd$sex[i])
+	contrast <- inter_completion_ages - intra_completion_ages
+	contrasts <- add_row(contrasts,
+			     culture=nd$culture[i], sex=nd$sex[i],
+			     `Completion age diff posterior mean` = mean(contrast),
+			     `Completion age diff HPD lower` = quantile(contrast, p=0.025),
+			     `Completion age diff HPD upper` = quantile(contrast, p=0.975),
+			     `Directionality` = mean(sign(contrast) == sign(mean(contrast))))
+}
+contrasts$culture <- c("Bandongo", "Bayaka")[contrasts$culture]
+kable(contrasts)
 ```
 
 ### Posterior predictive plots, showing sex effects
