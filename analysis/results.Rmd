@@ -222,6 +222,48 @@ contrasts$culture <- c("Bandongo", "Bayaka")[contrasts$culture]
 kable(contrasts)
 ```
 
+Contrasts marginalising over sex effects:
+
+```{r}
+contrasts <- tibble(culture=integer(),
+	     `Completion age diff posterior mean` = numeric(),
+	     `Completion age diff HPD lower` = numeric(),
+	     `Completion age diff HPD upper` = numeric(),
+	     `Directionality` = numeric())
+
+for(culture in c(1, 2)) {
+	condition <- 1
+	index <- 2*(culture - 1) + condition
+	sex <- -0.5
+	inter_completion_ages_a <- x$age_params[,index,1] + x$age_param_1_sex_effects[,index]*sex -
+			log(0.05)*(x$age_params[,index,2] + x$age_param_2_sex_effects[,index]*sex)
+	sex <- 0.5
+	inter_completion_ages_b <- x$age_params[,index,1] + x$age_param_1_sex_effects[,index]*sex -
+			log(0.05)*(x$age_params[,index,2] + x$age_param_2_sex_effects[,index]*sex)
+	inter_completion_ages <- c(inter_completion_ages_a, inter_completion_ages_b)
+
+	condition <- 2
+	index <- 2*(culture - 1) + condition
+	sex <- -0.5
+	intra_completion_ages_a <- x$age_params[,index,1] + x$age_param_1_sex_effects[,index]*sex -
+			log(0.05)*(x$age_params[,index,2] + x$age_param_2_sex_effects[,index]*sex)
+	sex <- 0.5
+	intra_completion_ages_b <- x$age_params[,index,1] + x$age_param_1_sex_effects[,index]*sex -
+			log(0.05)*(x$age_params[,index,2] + x$age_param_2_sex_effects[,index]*sex)
+	intra_completion_ages <- c(intra_completion_ages_a, intra_completion_ages_b)
+
+	contrast <- inter_completion_ages - intra_completion_ages
+
+	contrasts <- add_row(contrasts,
+			     culture=culture,
+			     `Completion age diff posterior mean` = mean(contrast),
+			     `Completion age diff HPD lower` = quantile(contrast, p=0.025),
+			     `Completion age diff HPD upper` = quantile(contrast, p=0.975),
+			     `Directionality` = mean(sign(contrast) == sign(mean(contrast))))
+}
+contrasts$culture <- c("Bandongo", "Bayaka")[contrasts$culture]
+kable(contrasts)
+
 ### Posterior predictive plots, showing sex effects
 
 ```{r}
