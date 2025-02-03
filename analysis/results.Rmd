@@ -92,12 +92,12 @@ nd <- add_row(nd, culture="Bandongo",
 	     `Completion age diff posterior mean` = mean(bandongo_contrast),
 	     `Completion age diff HPD lower` = quantile(bandongo_contrast, p=0.025),
 	     `Completion age diff HPD upper` = quantile(bandongo_contrast, p=0.975),
-	     `Directionality` = mean(bandongo_contrast > 0))
+	     `Directionality` = mean(sign(bandongo_contrast) == sign(mean(bandongo_contrast))))
 nd <- add_row(nd, culture="Bayaka", 
 	     `Completion age diff posterior mean` = mean(bayaka_contrast),
 	     `Completion age diff HPD lower` = quantile(bayaka_contrast, p=0.025),
 	     `Completion age diff HPD upper` = quantile(bayaka_contrast, p=0.975),
-	     `Directionality` = mean(bayaka_contrast > 0))
+	     `Directionality` = mean(sign(bayaka_contrast) == sign(mean(bayaka_contrast))))
 kable(nd, digits=2)
 ```
 
