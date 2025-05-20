@@ -126,13 +126,31 @@ for(i in indices) {
 	nd$sample <- i
 	plot_t <- add_row(plot_t, nd)
 }
+# Inflection points
+d_inf <- expand_grid(culture=c(1, 2), condition=c(1, 2))
+d_inf$index <- 2*(d_inf$culture - 1) + d_inf$condition
+infages <- colMeans(x$age_params[,,1])
+d_inf$age <- infages[d_inf$index]
+d_inf$culture <- c("Bandongo", "Bayaka")[d_inf$culture]
+d_inf$condition <- c("Inter-group", "Intra-group")[d_inf$condition]
 
 plot_t$culture <- c("Bandongo", "Bayaka")[plot_t$culture]
 plot_t$condition <- c("Inter-group", "Intra-group")[plot_t$condition]
 ggplot(plot_t) +
 	geom_line(aes(x=age, y=p, group=sample, colour=condition, linewidth=type, alpha=alpha)) +
+	geom_vline(aes(xintercept=age), linetype="dotted", data=d_inf) +
 	scale_discrete_manual("linewidth", values=c(1, 1/3)) +
-	facet_grid(condition~culture)
+	facet_grid(condition~culture) +
+	scale_x_log10(breaks=c(5, 10, 20, 30, 40, 50),
+		      minor_breaks=NULL,
+		      limits=c(5, 60)) +
+	scale_colour_discrete(name = "Condition",
+			      type=c("#feb24c", "#43a2ca")) +
+	xlab("Age (years)") +
+	ylab("Probability of sharing") +
+	ylim(c(0.15,0.85)) +
+	guides(alpha=FALSE, linewidth=FALSE)
+ggsave("plot1.png", dpi=600, width=180, height=180, units="mm")
 ```
 
 ## Extended model (with sex effects)
@@ -289,13 +307,35 @@ for(i in indices) {
 	plot_t <- add_row(plot_t, nd)
 }
 
+# Inflection ages
+d_inf <- expand_grid(culture=c(1, 2), condition=c(1, 2), sex=c(-0.5, 0.5))
+d_inf$index <- 2*(d_inf$culture - 1) + d_inf$condition
+d_inf$age <- 0
+for(i in 1:nrow(d_inf)) {
+	d_inf$age[i] <- mean(x$age_params[,d_inf$index[i],1] + x$age_param_1_sex_effects[,d_inf$index[i]]*d_inf$sex[i])
+}
+d_inf$culture <- c("Bandongo", "Bayaka")[d_inf$culture]
+d_inf$condition <- c("Inter-group", "Intra-group")[d_inf$condition]
+d_inf$sex <- if_else(d_inf$sex <0, "Male", "Female")
+
 plot_t$sex <- if_else(plot_t$sex < 0, "Male", "Female")
 plot_t$culture <- c("Bandongo", "Bayaka")[plot_t$culture]
 plot_t$condition <- c("Inter-group", "Intra-group")[plot_t$condition]
 ggplot(plot_t) +
 	geom_line(aes(x=age, y=p, group=sample, colour=sex, linewidth=type, alpha=alpha)) +
+	geom_vline(aes(xintercept=age, colour=sex), linetype="dotted", data=d_inf) +
 	scale_discrete_manual("linewidth", values=c(1, 1/3)) +
-	facet_grid(condition~culture)
+	facet_grid(condition~culture) +
+	scale_x_log10(breaks=c(5, 10, 20, 30, 40, 50),
+		      minor_breaks=NULL,
+		      limits=c(5, 60)) +
+	scale_colour_discrete(name = "Sex",
+			      type=c("#feb24c", "#43a2ca")) +
+	xlab("Age (years)") +
+	ylab("Probability of sharing") +
+	ylim(c(0.15,0.85)) +
+	guides(alpha=FALSE, linewidth=FALSE)
+ggsave("plot2.png", dpi=600, width=180, height=180, units="mm")
 ```
 
 ### Posterior predictive plots, marginalising out sex effects
@@ -332,10 +372,33 @@ for(i in indices) {
 	plot_t <- add_row(plot_t, nd)
 }
 
+# Inflection ages
+d_inf <- expand_grid(culture=c(1, 2), condition=c(1, 2))
+d_inf$index <- 2*(d_inf$culture - 1) + d_inf$condition
+d_inf$age <- 0
+for(i in 1:nrow(d_inf)) {
+	inf_ages <- 0.5*(x$age_params[,d_inf$index[i],1] + x$age_param_1_sex_effects[,d_inf$index[i]]*-0.5)
+	inf_ages <- inf_ages + 0.5*(x$age_params[,d_inf$index[i],1] + x$age_param_1_sex_effects[,d_inf$index[i]]*0.5)
+	d_inf$age[i] <- mean(inf_ages)
+}
+d_inf$culture <- c("Bandongo", "Bayaka")[d_inf$culture]
+d_inf$condition <- c("Inter-group", "Intra-group")[d_inf$condition]
+
 plot_t$culture <- c("Bandongo", "Bayaka")[plot_t$culture]
 plot_t$condition <- c("Inter-group", "Intra-group")[plot_t$condition]
 ggplot(plot_t) +
 	geom_line(aes(x=age, y=p, group=sample, colour=condition, linewidth=type, alpha=alpha)) +
+	geom_vline(aes(xintercept=age), linetype="dotted", data=d_inf) +
 	scale_discrete_manual("linewidth", values=c(1, 1/3)) +
-	facet_grid(condition~culture)
+	facet_grid(condition~culture) +
+	scale_x_log10(breaks=c(5, 10, 20, 30, 40, 50),
+		      minor_breaks=NULL,
+		      limits=c(5, 60)) +
+	scale_colour_discrete(name = "Condition",
+			      type=c("#feb24c", "#43a2ca")) +
+	xlab("Age (years)") +
+	ylab("Probability of sharing") +
+	ylim(c(0.15,0.85)) +
+	guides(alpha=FALSE, linewidth=FALSE)
+ggsave("plot3.png", dpi=600, width=180, height=180, units="mm")
 ```
