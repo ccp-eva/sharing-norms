@@ -12,7 +12,6 @@ editor_options:
 
 ```{r import data, include=FALSE}
 
-#setwd("~/Documents/Projects/2021-10-18_xShare/Analysis/sharing-norms-main/analysis")
 ### Import data
 #### Load packages and clear environment.
 library(tidyverse)
@@ -26,191 +25,19 @@ d <- read_csv("../data/raw_data_anonymized.csv")
 pal80s<-rep(c("#eab60b","#4d8d72","#ea84b2","#e67309","#516bb4","#e45d5c","#9c84e8","#7ed2e8","#e9b50d"),20)
 ```
 
-## Model (with sex effects)
+## Raw data summaries and visualisation
 
 ```{r}
-model <- readRDS("model_sex.rds")
-x <- extract(model)
-```
-
-The estimated ``infant'' sharing rate, with posterioe mean `r round(mean(x$start_prob), 2)`, with 89% HPD interval [`r round(quantile(x$start_prob, p=0.055), 2)` - `r round(quantile(x$start_prob, p=0.945), 2)`].
-
-``` {r}
-# Marginalize over sex for adult sharing rates
-nd <- expand_grid(culture = c(1, 2), condition = c(1, 2))
-nd$index <- 2 * (nd$culture - 1) + nd$condition
-nd$culture <- c("Bandongo", "Bayaka")[nd$culture]
-nd$condition <- c("Inter-ethnic", "Intra-ethnic")[nd$condition]
-
-for (i in 1:nrow(nd)) {
-  # Compute male and female posteriors
-  end_probs_male <- plogis(qlogis(x$end_probs[, nd$index[i]]) + x$end_prob_sex_effects[, nd$index[i]] * (-0.5))
-  end_probs_female <- plogis(qlogis(x$end_probs[, nd$index[i]]) + x$end_prob_sex_effects[, nd$index[i]] * 0.5)
-  
-  # Average over sex (marginalization)
-  end_probs_avg <- (end_probs_male + end_probs_female) / 2
-
-  # Summarize posterior
-  nd$end_probs_posterior_mean[i] <- mean(end_probs_avg)
-  nd$end_probs_hpd_lower[i] <- quantile(end_probs_avg, p = 0.055)
-  nd$end_probs_hpd_upper[i] <- quantile(end_probs_avg, p = 0.945)
-}
-
-nd %>%
-  dplyr::select(-index) %>%
-  kable(digits = 2)
-```
-
-Complettion ages marginalizing completion age over sex:
-
-```{r}
-# Completion ages by culture and condition (marginalized over sex)
-nd <- expand_grid(culture = c(1, 2), condition = c(1, 2))
-nd$index <- 2 * (nd$culture - 1) + nd$condition
-nd$culture <- c("Bandongo", "Bayaka")[nd$culture]
-nd$condition <- c("Inter-ethnic", "Intra-ethnic")[nd$condition]
-
-for (i in 1:nrow(nd)) {
-  # Compute for both sexes
-  sex_vals <- c(-0.5, 0.5)
-
-  completion_ages <- sapply(sex_vals, function(sex) {
-    x$age_params[, nd$index[i], 1] + x$age_param_1_sex_effects[, nd$index[i]] * sex -
-      log(0.05) * (x$age_params[, nd$index[i], 2] + x$age_param_2_sex_effects[, nd$index[i]] * sex)
-  }) %>% rowMeans()
-
-  # Summarize
-  nd$completion_age_posterior_mean[i] <- mean(completion_ages)
-  nd$completion_age_hpd_lower[i] <- quantile(completion_ages, 0.055)
-  nd$completion_age_hpd_upper[i] <- quantile(completion_ages, 0.945)
-}
-
-nd %>%
-  dplyr::select(culture, condition, starts_with("completion")) %>%
-  kable(digits = 2)
-```
-
-Contrasts for inter minus intra-ethnic sharing, marginalising over sex effects:
-
-```{r}
-contrasts <- tibble(culture=integer(),
-	     `Completion age diff posterior mean` = numeric(),
-	     `Completion age diff HPD lower` = numeric(),
-	     `Completion age diff HPD upper` = numeric(),
-	     `Directionality` = numeric())
-
-for(culture in c(1, 2)) {
-	condition <- 1
-	index <- 2*(culture - 1) + condition
-	sex <- -0.5
-	inter_completion_ages_a <- x$age_params[,index,1] + x$age_param_1_sex_effects[,index]*sex -
-			log(0.05)*(x$age_params[,index,2] + x$age_param_2_sex_effects[,index]*sex)
-	sex <- 0.5
-	inter_completion_ages_b <- x$age_params[,index,1] + x$age_param_1_sex_effects[,index]*sex -
-			log(0.05)*(x$age_params[,index,2] + x$age_param_2_sex_effects[,index]*sex)
-	inter_completion_ages <- c(inter_completion_ages_a, inter_completion_ages_b)
-
-	condition <- 2
-	index <- 2*(culture - 1) + condition
-	sex <- -0.5
-	intra_completion_ages_a <- x$age_params[,index,1] + x$age_param_1_sex_effects[,index]*sex -
-			log(0.05)*(x$age_params[,index,2] + x$age_param_2_sex_effects[,index]*sex)
-	sex <- 0.5
-	intra_completion_ages_b <- x$age_params[,index,1] + x$age_param_1_sex_effects[,index]*sex -
-			log(0.05)*(x$age_params[,index,2] + x$age_param_2_sex_effects[,index]*sex)
-	intra_completion_ages <- c(intra_completion_ages_a, intra_completion_ages_b)
-
-	contrast <- inter_completion_ages - intra_completion_ages
-
-	contrasts <- add_row(contrasts,
-			     culture=culture,
-			     `Completion age diff posterior mean` = mean(contrast),
-			     `Completion age diff HPD lower` = quantile(contrast, p=0.055),
-			     `Completion age diff HPD upper` = quantile(contrast, p=0.945),
-			     `Directionality` = mean(sign(contrast) == sign(mean(contrast))))
-}
-contrasts$culture <- c("Bandongo", "Bayaka")[contrasts$culture]
-kable(contrasts)
-```
-
-### Posterior predictive plots, marginalising out sex effects
-
-```{r}
-nd <- expand_grid(age=seq(5, 75, 0.25), culture=c(1, 2), condition=c(1, 2))
-nd$index <- 2*(nd$culture - 1) + nd$condition
-# First add posterior mean
-sex <- -0.5
-m_p <-   mean(x$start_prob) +
-	(plogis(qlogis(colMeans(x$end_probs)[nd$index]) + colMeans(x$end_prob_sex_effects)[nd$index]*sex) - mean(x$start_prob)) * plogis((colMeans(x$age_params)[nd$index, 2] + colMeans(x$age_param_2_sex_effects)[nd$index]*sex)*(nd$age - (colMeans(x$age_params)[nd$index, 1] + colMeans(x$age_param_1_sex_effects)[nd$index]*sex)))
-sex <- 0.5
-f_p <-   mean(x$start_prob) +
-	(plogis(qlogis(colMeans(x$end_probs)[nd$index]) + colMeans(x$end_prob_sex_effects)[nd$index]*sex) - mean(x$start_prob)) * plogis((colMeans(x$age_params)[nd$index, 2] + colMeans(x$age_param_2_sex_effects)[nd$index]*sex)*(nd$age - (colMeans(x$age_params)[nd$index, 1] + colMeans(x$age_param_1_sex_effects)[nd$index]*sex)))
-nd$p <- 0.5*(m_p + f_p)
-nd$type <- "posterior mean"
-nd$alpha <- 1
-nd$sample <- 0
-plot_t <- nd
-
-# Now plot 50 random samples
-nd$type <- "posterior samples"
-nd$alpha <- 0.5
-indices <- sample(1:length(x$start_prob), size=50, replace=FALSE)
-for(i in indices) {
-	sex < -0.5
-	m_p <- x$start_prob[i] +
-	       (plogis(qlogis(x$end_probs[i, nd$index]) + x$end_prob_sex_effects[i, nd$index]*sex) - x$start_prob[i]) * plogis((x$age_params[i, nd$index, 2] + x$age_param_2_sex_effects[i,nd$index]*sex)*(nd$age - (x$age_params[i, nd$index, 1] + x$age_param_1_sex_effects[i, nd$index]*sex)))
-	sex < 0.5
-	f_p <- x$start_prob[i] +
-	       (plogis(qlogis(x$end_probs[i, nd$index]) + x$end_prob_sex_effects[i, nd$index]*sex) - x$start_prob[i]) * plogis((x$age_params[i, nd$index, 2] + x$age_param_2_sex_effects[i,nd$index]*sex)*(nd$age - (x$age_params[i, nd$index, 1] + x$age_param_1_sex_effects[i, nd$index]*sex)))
-        nd$p <- 0.5*(m_p + f_p)
-	nd$sample <- i
-	plot_t <- add_row(plot_t, nd)
-}
-
-# Inflection ages
-d_inf <- expand_grid(culture=c(1, 2), condition=c(1, 2))
-d_inf$index <- 2*(d_inf$culture - 1) + d_inf$condition
-d_inf$age <- 0
-for(i in 1:nrow(d_inf)) {
-	inf_ages <- 0.5*(x$age_params[,d_inf$index[i],1] + x$age_param_1_sex_effects[,d_inf$index[i]]*-0.5)
-	inf_ages <- inf_ages + 0.5*(x$age_params[,d_inf$index[i],1] + x$age_param_1_sex_effects[,d_inf$index[i]]*0.5)
-	d_inf$age[i] <- mean(inf_ages)
-}
-d_inf$culture <- c("Bandongo", "Bayaka")[d_inf$culture]
-d_inf$condition <- c("Inter-ethnic", "Intra-ethnic")[d_inf$condition]
-
-plot_t$culture <- c("Bandongo", "Bayaka")[plot_t$culture]
-plot_t$condition <- c("Inter-ethnic", "Intra-ethnic")[plot_t$condition]
-
-plot_t <- plot_t %>%
-  dplyr::mutate(condition = as.factor(condition),
-         condition = fct_relevel(condition,"Intra-ethnic", "Inter-ethnic"))
-d_inf <- d_inf %>%
-  dplyr::mutate(condition = as.factor(condition),
-         condition = fct_relevel(condition,"Intra-ethnic", "Inter-ethnic"))
-
-ggplot(plot_t) +
-	geom_line(aes(x=age, y=p, group=sample, colour=condition, linewidth=type, alpha=alpha)) +
-	geom_vline(aes(xintercept=age), linetype="dotted", data=d_inf) +
-	scale_discrete_manual("linewidth", values=c(1, 1/3)) +
-	facet_grid(condition~culture) +
-	scale_x_log10(breaks=c(5, 10, 20, 30, 40, 50),
-		      minor_breaks=NULL,
-		      limits=c(5, 60)) +
-	scale_colour_discrete(name = "Condition",
-			      type=c("#43a2ca","#feb24c")) +
-	xlab("Age (years)") +
-	ylab("Probability of sharing") +
-	ylim(c(0.15,0.85)) +
-	guides(alpha=FALSE, linewidth=FALSE)
-ggsave("plot3.png", dpi=600, width=180, height=180, units="mm")
-
-
-
 d %>%
   group_by(pid) %>% slice(1) %>% ungroup() %>%
-  dplyr::summarise(n = n_distinct(pid),n_children = sum(age<17),n_adults = sum(age>=17), min_age = min(age), max_age=max(age), mean_age=mean(age), n_fem=sum(sex=="FEMALE"), n_BaYaka=sum(culture=="BAYAKA"))
-
+  dplyr::summarise(n = n_distinct(pid),
+		   n_children = sum(age<17),
+		   n_adults = sum(age>=17),
+		   min_age = min(age),
+		   max_age=max(age),
+		   mean_age=mean(age),
+		   n_fem=sum(sex=="FEMALE"),
+		   n_BaYaka=sum(culture=="BAYAKA"))
 
 d %>%
   group_by(pid) %>%
@@ -250,6 +77,204 @@ d %>%
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.title = element_blank()) +
   labs(x = "Age Bin", y = "Count")
+```
 
+## Model results (model with sex effects, but marginalising over them for reporting)
 
+```{r}
+model <- readRDS("model_sex.rds")
+x <- extract(model)
+```
+
+### Sharing rates
+
+The estimated ``infant'' sharing rate, with posterior mean `r round(mean(x$start_prob), 2)`, with 89% HPD interval [`r round(quantile(x$start_prob, p=0.055), 2)` - `r round(quantile(x$start_prob, p=0.945), 2)`].
+
+``` {r}
+# Marginalize over sex for adult sharing rates
+nd <- expand_grid(culture = c(1, 2), condition = c(1, 2))
+nd$index <- 2 * (nd$culture - 1) + nd$condition
+nd$culture <- c("Bandongo", "Bayaka")[nd$culture]
+nd$condition <- c("Inter-ethnic", "Intra-ethnic")[nd$condition]
+
+for (i in 1:nrow(nd)) {
+  # Compute male and female posteriors
+  end_probs_male <- plogis(qlogis(x$end_probs[, nd$index[i]]) + x$end_prob_sex_effects[, nd$index[i]] * (-0.5))
+  end_probs_female <- plogis(qlogis(x$end_probs[, nd$index[i]]) + x$end_prob_sex_effects[, nd$index[i]] * 0.5)
+  
+  # Average over sex (marginalization)
+  end_probs_avg <- (end_probs_male + end_probs_female) / 2
+
+  # Summarize posterior
+  nd$posterior_mean[i] <- mean(end_probs_avg)
+  nd$hpd_lower[i] <- quantile(end_probs_avg, p = 0.055)
+  nd$hpd_upper[i] <- quantile(end_probs_avg, p = 0.945)
+}
+
+nd %>%
+  dplyr::select(-index) %>%
+  rename(`End probability posterior mean` = posterior_mean,
+         `End probability 89% HPD lower` = hpd_lower,
+         `End probability 89% HPD upper` = hpd_upper) %>%
+  kable(digits = 2)
+```
+
+### Completion ages
+
+```{r}
+completion_age <- function(x, index) {
+    result <- c()
+    for(sex in c(-0.5, 0.5)) {
+        result <- c(result, x$age_params[, index, 1] +
+	                     x$age_param_1_sex_effects[, index]*sex -
+                             log(0.05) * (x$age_params[, index, 2] +
+					  x$age_param_2_sex_effects[, index] * sex))
+    }
+    return(result)
+}
+
+for (i in 1:nrow(nd)) {
+  completion_ages <- completion_age(x, nd$index[i])
+  nd$posterior_mean[i] <- mean(completion_ages)
+  nd$hpd_lower[i] <- quantile(completion_ages, 0.055)
+  nd$hpd_upper[i] <- quantile(completion_ages, 0.945)
+}
+
+nd %>%
+  dplyr::select(-index) %>%
+  rename(`Completion age posterior mean` = posterior_mean,
+         `Completion age 89% HPD lower` = hpd_lower,
+         `Completion age 89% HPD upper` = hpd_upper) %>%
+  kable(digits = 2)
+```
+
+### Differences in completion ages
+
+```{r}
+contrasts <- tibble(culture=integer(), posterior_mean = numeric(), hpd_lower = numeric(),
+	            hpd_upper = numeric(), support = numeric())
+for(culture in c(1, 2)) {
+	condition <- 1
+	index <- 2*(culture - 1) + condition
+	inter_completion_ages <- completion_age(x, index)
+	condition <- 2
+	index <- 2*(culture - 1) + condition
+	intra_completion_ages <- completion_age(x, index)
+	contrast <- inter_completion_ages - intra_completion_ages
+	contrasts <- add_row(contrasts, culture=culture, posterior_mean = mean(contrast),
+			     hpd_lower = quantile(contrast, p=0.055),
+			     hpd_upper = quantile(contrast, p=0.945),
+			     support = mean(contrast > 0))
+}
+contrasts$culture <- c("Bandongo", "Bayaka")[contrasts$culture]
+contrasts %>%
+  rename(`Completion age posterior mean` = posterior_mean,
+         `Completion age 89% HPD lower` = hpd_lower,
+         `Completion age 89% HPD upper` = hpd_upper,
+	 `Posterior support for hypothesis` = support) %>%
+  kable(digits = 2)
+```
+
+### Posterior predictive plots
+
+```{r}
+sharing_probability <- function(start_prob,
+				end_prob, end_prob_sex_effect,
+				age_param_1, age_param_1_sex_effect,
+				age_param_2, age_param_2_sex_effect,
+				age) {
+    p <- 0
+    for(sex in c(-0.5, 0.5)) {
+        sex_end_prob <- plogis(qlogis(end_prob) + end_prob_sex_effect*sex)
+        sex_age_param_1 <- age_param_1 + age_param_1_sex_effect*sex
+        sex_age_param_2 <- age_param_2 + age_param_2_sex_effect*sex
+        p <- p + 0.5*(start_prob +
+	              (sex_end_prob - start_prob)*
+		      plogis(-sex_age_param_2*(age - sex_age_param_1)))
+    }
+    return(p)
+}
+
+nd <- expand_grid(age=seq(5, 60, 0.25), culture=c(1, 2), condition=c(1, 2))
+nd$index <- 2*(nd$culture - 1) + nd$condition
+
+# First add posterior mean
+start_prob <- mean(x$start_prob)
+end_probs <- colMeans(x$end_probs)
+end_prob_sex_effects <- colMeans(x$end_prob_sex_effects)
+age_params <- colMeans(x$age_params)
+age_param_1_sex_effects <- colMeans(x$age_param_1_sex_effects)
+age_param_2_sex_effects <- colMeans(x$age_param_2_sex_effects)
+for (i in 1:nrow(nd)) {
+    nd$p[i] <- sharing_probability(start_prob,
+                                   end_probs[nd$index[i]], end_prob_sex_effects[nd$index[i]],
+                                   age_params[nd$index[i], 1], age_param_1_sex_effects[nd$index[i]],
+                                   age_params[nd$index[i], 2], age_param_2_sex_effects[nd$index[i]],
+                                   nd$age[i])
+}
+nd$type <- "posterior mean"
+nd$alpha <- 1
+nd$sample <- 0
+plot_t <- nd
+
+# Now plot 50 random posterior samples
+nd$type <- "posterior samples"
+nd$alpha <- 0.5
+indices <- sample(1:length(x$start_prob), size=50, replace=FALSE)
+for(j in indices) {
+    start_prob <- x$start_prob[j]
+    end_probs <- x$end_probs[j, ]
+    end_prob_sex_effects <- x$end_prob_sex_effects[j, ]
+    age_params <- x$age_params[j, , ]
+    age_param_1_sex_effects <- x$age_param_1_sex_effects[j, ]
+    age_param_2_sex_effects <- x$age_param_2_sex_effects[j, ]
+    for (i in 1:nrow(nd)) {
+        nd$p[i] <- sharing_probability(start_prob,
+                                       end_probs[nd$index[i]], end_prob_sex_effects[nd$index[i]],
+                                       age_params[nd$index[i], 1], age_param_1_sex_effects[nd$index[i]],
+                                       age_params[nd$index[i], 2], age_param_2_sex_effects[nd$index[i]],
+                                       nd$age[i])
+    }
+    nd$sample <- j
+    plot_t <- add_row(plot_t, nd)
+}
+
+# Inflection ages
+d_inf <- expand_grid(culture=c(1, 2), condition=c(1, 2))
+d_inf$index <- 2*(d_inf$culture - 1) + d_inf$condition
+d_inf$age <- 0
+for(i in 1:nrow(d_inf)) {
+	inf_ages <- 0.5*(x$age_params[,d_inf$index[i],1] + x$age_param_1_sex_effects[,d_inf$index[i]]*-0.5)
+	inf_ages <- inf_ages + 0.5*(x$age_params[,d_inf$index[i],1] + x$age_param_1_sex_effects[,d_inf$index[i]]*0.5)
+	d_inf$age[i] <- mean(inf_ages)
+}
+d_inf$culture <- c("Bandongo", "Bayaka")[d_inf$culture]
+d_inf$condition <- c("Inter-ethnic", "Intra-ethnic")[d_inf$condition]
+
+#  Do plot
+plot_t$culture <- c("Bandongo", "Bayaka")[plot_t$culture]
+plot_t$condition <- c("Inter-ethnic", "Intra-ethnic")[plot_t$condition]
+
+plot_t <- plot_t %>%
+  dplyr::mutate(condition = as.factor(condition),
+         condition = fct_relevel(condition,"Intra-ethnic", "Inter-ethnic"))
+d_inf <- d_inf %>%
+  dplyr::mutate(condition = as.factor(condition),
+         condition = fct_relevel(condition,"Intra-ethnic", "Inter-ethnic"))
+
+ggplot(plot_t) +
+	geom_line(aes(x=age, y=p, group=sample, colour=condition, linewidth=type, alpha=alpha)) +
+	geom_vline(aes(xintercept=age), linetype="dotted", data=d_inf) +
+	scale_discrete_manual("linewidth", values=c(1, 1/3)) +
+	facet_grid(condition~culture) +
+	scale_x_log10(breaks=c(5, 10, 20, 30, 40, 50),
+		      minor_breaks=NULL,
+		      limits=c(5, 60)) +
+	scale_colour_discrete(name = "Condition",
+			      type=c("#43a2ca","#feb24c")) +
+	xlab("Age (years)") +
+	ylab("Probability of sharing") +
+	ylim(c(0.15,0.85)) +
+	guides(alpha=FALSE, linewidth=FALSE)
+ggsave("plot3.png", dpi=600, width=180, height=180, units="mm")
 ```
