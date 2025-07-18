@@ -1,29 +1,27 @@
-# Project Title
-> Oneliner about your project 
-
-## Abstract
-Paste your Abstract in here.
-
-## Publication Links
-- [Journal](https://#)
-- [Preprint](https://#)
-- [OSF](https://#)
-- [Zenodo](https://#)
-- [Figshare](https://#)
+# The social learning and development of intra- and inter-ethnic sharing norms in the Congo Basin
 
 ## Repository Structure
-### data
-You can retrieve the data here ...
 
-### docs
-Procedures and coding schema can be found here. It is structured like this... 
+### Data
 
-### Use CFF for Documents/Articles
+Raw data is found in the `data` directory.  It consists of experimental data
+(`data/raw_data_anonymized.csv`) and interview data (split across four files
+`data/Interview_Data*.csv`).
 
-Use the `preferred-citation` key in the cff if you want to get a correct bibtext file:
-More here: https://docs.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-on-github/about-citation-files#citing-something-other-than-software
+The anonymised experimental data is derived from a non-shared raw data file,
+using the script `data/anonymize.R`.
 
+### Analysis
 
-## Installation Instructions
-lalaliii
+A logistic model is fit to the experimental data, implemented in Stan.  The Stan
+model definitions are in `analysis/stan_code*.c` and the R script which fits
+them is in `analysis/fit_model.R`.
 
+Two Bayesian GLMMs are fit to the interview data, implemented in brms.  This
+code is in `analysis/Interviews.R`.
+
+### Results
+
+The `analysis/results.Rmd` RMarkdown document loads the fitted stan models and
+presents tables of results as reported in the manuscript.  The helper script
+`analysis/knit.sh` knits this document to a PDF file.
